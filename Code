@@ -1,1 +1,909 @@
 
+Sentiment Analysis and Its Implementation: A Detailed Workflow using TextBlob and NLP Models in a Colab Notebook
+
+This notebook focuses on conducting a comprehensive sentiment analysis using TextBlob and advanced NLP models. We'll navigate through a clear structure, making it easy to understand the entire process from data preparation to visualization.
+
+The structure of this notebook is as follows:
+
+    Import Libraries: This section deals with the importation of necessary libraries and modules required for sentiment analysis.
+
+    Preprocessing: Here, we will clean and prepare the data for further analysis. This includes techniques such as tokenization, lemmatization, removing stopwords, etc.
+
+    TextBlob: In this section, we will introduce TextBlob, a Python library for processing textual data. It will be used for part-of-speech tagging, noun phrase extraction, sentiment analysis, etc.
+
+    Sentiment Analyzer: Here, we will analyze sentiments from our preprocessed data using TextBlob and other methods, identifying and categorizing the opinions expressed in the text.
+
+    NLP Model: We will build and train a Natural Language Processing (NLP) model on our dataset to improve our sentiment analysis task. The model we shall be using is BERT.
+
+    Visualizations: Lastly, the notebook contains a section dedicated to visualizing the results obtained from the sentiment analysis. This will help us better understand and interpret the results of our analysis.
+
+# Required Installations
+!pip install -q textblob
+!pip install -q transformers
+!pip install -q -U keras-tuner
+!pip install us
+!pip install tqdm
+
+# Import required libraries
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+import pandas as pd
+import us
+import numpy as np
+import nltk
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+import re
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.utils import to_categorical
+from torch.utils.data import Dataset, DataLoader, TensorDataset, random_split
+from nltk.sentiment import SentimentIntensityAnalyzer
+
+# NLP Model
+from transformers import BertTokenizer, BertForSequenceClassification, AdamW
+from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+from transformers import AutoModelForSequenceClassification
+from transformers import AutoTokenizer
+
+# For Tokenizing and labeling
+nltk.download('vader_lexicon')
+nltk.download('punkt')
+nltk.download('wordnet')
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import CountVectorizer
+
+# For Hyper Parameter tuning
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
+
+# For Scoring
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# For Visualization
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+
+# Other required imports
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
+import torch
+from sklearn import preprocessing
+from tqdm import tqdm
+from transformers import get_linear_schedule_with_warmup
+import numpy as np
+from sklearn.metrics import accuracy_score
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+Dataset ='Facebook_Comments.csv'
+df = pd.read_csv(Dataset, index_col=0)
+
+df
+
+def preprocess_text(text):
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', '', text)
+    tokens = word_tokenize(text)
+    stop_words = set(stopwords.words('english'))
+    filtered_tokens = [word for word in tokens if word not in stop_words]
+    lemmatizer = WordNetLemmatizer()
+    lemmatized_tokens = [lemmatizer.lemmatize(token) for token in filtered_tokens]
+    preprocessed_text = ' '.join(lemmatized_tokens)
+    return preprocessed_text
+
+df['Preprocessed Comments'] = df['Facebook Comments'].apply(preprocess_text)
+
+df.head()
+
+df_sentiments_processed = pd.DataFrame({'Sentiment': sentiments})
+df_sentiments_unprocessed = pd.DataFrame({'Sentiment': unproc_sentiments})
+
+# Calculating the overall sentiment score
+overall_sentiment_processed = df_sentiments_processed['Sentiment'].mean()
+overall_sentiment_unprocessed = df_sentiments_unprocessed['Sentiment'].mean()
+
+# Calculating the counts
+positive_count_processed = len(df_sentiments_processed[df_sentiments_processed['Sentiment'] > 0])
+negative_count_processed = len(df_sentiments_processed[df_sentiments_processed['Sentiment'] < 0])
+neutral_count_processed = len(df_sentiments_processed[df_sentiments_processed['Sentiment'] == 0])
+
+positive_count_unprocessed = len(df_sentiments_unprocessed[df_sentiments_unprocessed['Sentiment'] > 0])
+negative_count_unprocessed = len(df_sentiments_unprocessed[df_sentiments_unprocessed['Sentiment'] < 0])
+neutral_count_unprocessed = len(df_sentiments_unprocessed[df_sentiments_unprocessed['Sentiment'] == 0])
+
+print("Processed Blob:")
+print("Overall Sentiment Score:", overall_sentiment_processed)
+print("Positive Sentiments:", positive_count_processed)
+print("Negative Sentiments:", negative_count_processed)
+print("Neutral Sentiments:", neutral_count_processed)
+print()
+print("Unprocessed Blob:")
+print("Overall Sentiment Score:", overall_sentiment_unprocessed)
+print("Positive Sentiments:", positive_count_unprocessed)
+print("Negative Sentiments:", negative_count_unprocessed)
+print("Neutral Sentiments:", neutral_count_unprocessed)
+
+# Find the score by state
+
+brands = ['Coke', 'Pepsi']
+states = ['Texas', 'Nevada', 'New York']
+
+for brand in brands:
+    brand_comments = df[df['Facebook Comments'].str.contains(brand, case=False)]
+    brand_sentiment = brand_comments['Blob_Processed'].mean()
+    brand_unproc_sentiment = brand_comments['Blob_Unprocessed'].mean()
+    print(f"Average Sentiment for {brand} Comments: {brand_sentiment} (Original), {brand_unproc_sentiment} (Unprocessed)")
+
+    state_sentiments = []
+    state_unproc_sentiments = []
+    for state in states:
+        state_brand_comments = brand_comments[brand_comments['State'].str.contains(state, case=False)]
+        state_brand_sentiment = state_brand_comments['Blob_Processed'].mean()
+        state_brand_unproc_sentiment = state_brand_comments['Blob_Unprocessed'].mean()
+        state_sentiments.append(state_brand_sentiment)
+        state_unproc_sentiments.append(state_brand_unproc_sentiment)
+        print(f"Sentiment Score for {brand} in {state}: {state_brand_sentiment} (Original), {state_brand_unproc_sentiment} (Unprocessed)")
+
+sia = SentimentIntensityAnalyzer()
+
+# Get sentiment for both processed and unprocessed comments
+df['Sentiment_Processed'] = df['Preprocessed Comments'].apply(lambda x: sia.polarity_scores(x)['compound'])
+df['Sentiment_Unprocessed'] = df['Facebook Comments'].apply(lambda x: sia.polarity_scores(x)['compound'])
+
+#function to calculate sentiment stats
+def calculate_sentiment_stats(df, column):
+    overall_sentiment = df[column].mean()
+    positive_count = len(df[df[column] > 0])
+    negative_count = len(df[df[column] < 0])
+    neutral_count = len(df[df[column] == 0])
+
+    return overall_sentiment, positive_count, negative_count, neutral_count
+
+# print sentiment stats for processed and unprocessed comments
+for column in ['Sentiment_Processed', 'Sentiment_Unprocessed']:
+    overall, positive, negative, neutral = calculate_sentiment_stats(df, column)
+    print(f"{column}:")
+    print("Overall Sentiment Score:", overall)
+    print("Positive Sentiments:", positive)
+    print("Negative Sentiments:", negative)
+    print("Neutral Sentiments:", neutral)
+    print()
+
+print("Processed Blob:")
+print("Overall Sentiment Score:", overall_sentiment_processed)
+print("Positive Sentiments:", positive_count_processed)
+print("Negative Sentiments:", negative_count_processed)
+print("Neutral Sentiments:", neutral_count_processed)
+print()
+print("Unprocessed Blob:")
+print("Overall Sentiment Score:", overall_sentiment_unprocessed)
+print("Positive Sentiments:", positive_count_unprocessed)
+print("Negative Sentiments:", negative_count_unprocessed)
+print("Neutral Sentiments:", neutral_count_unprocessed)
+
+#Same as we did for text blob but we are now getting it by brand for the SIA
+sia = SentimentIntensityAnalyzer()
+
+def get_sentiment(text):
+    sentiment = sia.polarity_scores(text)
+    return sentiment['compound']  # Use the compound score as the sentiment
+
+brands = ['Coke', 'Pepsi']
+states = ['Texas', 'Nevada', 'New York']
+
+for brand in brands:
+    brand_comments = df[df['Facebook Comments'].str.contains(brand, case=False)]
+    brand_sentiment = brand_comments['Facebook Comments'].apply(get_sentiment).mean()
+    brand_preproc_sentiment = brand_comments['Preprocessed Comments'].apply(get_sentiment).mean()
+
+    print(f"Average Sentiment for {brand} Comments: {brand_sentiment} (Original), {brand_preproc_sentiment} (Preprocessed)")
+
+    for state in states:
+        state_brand_comments = brand_comments[brand_comments['State'].str.contains(state, case=False)]
+        state_brand_sentiment = state_brand_comments['Facebook Comments'].apply(get_sentiment).mean()
+        state_brand_preproc_sentiment = state_brand_comments['Preprocessed Comments'].apply(get_sentiment).mean()
+
+        print(f"Sentiment Score for {brand} in {state}: {state_brand_sentiment} (Original), {state_brand_preproc_sentiment} (Preprocessed)")
+
+    print()
+
+tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+model = DistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased')
+
+def get_sentiment(text):
+    inputs = tokenizer(text, padding=True, truncation=True, return_tensors='pt')
+    outputs = model(**inputs)
+    logits = outputs.logits
+    sentiment_label = torch.argmax(logits, dim=1)
+    sentiment_score = torch.softmax(logits, dim=1)
+    return sentiment_label.item(), sentiment_score.max().item()
+
+df['Bert_label'], df['Bert_score'] = zip(*df['Facebook Comments'].apply(get_sentiment))
+
+sentiment_classes = {0: 'negative', 1: 'neutral', 2: 'positive'}
+df['Bert_class'] = df['Bert_label'].map(sentiment_classes)
+
+print(df.head())
+
+#Here we are getting the scores for Bert by state
+df_scores_by_state = df[['State', 'Bert_score']]
+df_scores_by_state = df_scores_by_state.groupby('State').mean().reset_index()
+print(df_scores_by_state)
+
+from sklearn.metrics import classification_report
+
+# True labels - We will assign this to the Sentiment Class by SIA as a bencmark
+y_true = df['Sentiment_Class_Processed']
+# Predicted labels
+y_pred = df['Bert_label']
+
+report = classification_report(y_true, y_pred)
+print(report)
+
+# Scatter plot for sentiment scores of processed comments
+plt.figure(figsize=(10, 6))
+plt.scatter(range(len(df)), df['Sentiment_Processed'], alpha=0.5)
+plt.title('Scatter plot of Sentiment Scores for Processed Comments')
+plt.xlabel('Index')
+plt.ylabel('Sentiment Score')
+plt.grid(True)
+plt.show()
+
+# Scatter plot for sentiment scores of unprocessed comments
+plt.figure(figsize=(10, 6))
+plt.scatter(range(len(df)), df['Sentiment_Unprocessed'], alpha=0.5, color='r')
+plt.title('Scatter plot of Sentiment Scores for Unprocessed Comments')
+plt.xlabel('Index')
+plt.ylabel('Sentiment Score')
+plt.grid(True)
+plt.show()
+
+import numpy as np
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+# Function to convert sentiment scores into classes
+def sentiment_to_class(sentiment_score):
+    if sentiment_score > 0.05:
+        return 'positive'
+    elif sentiment_score < -0.05:
+        return 'negative'
+    else:
+        return 'neutral'
+
+# Apply the function to convert sentiment scores into classes
+df['Sentiment_Class_Processed'] = df['Sentiment_Processed'].apply(sentiment_to_class)
+df['Sentiment_Class_Unprocessed'] = df['Sentiment_Unprocessed'].apply(sentiment_to_class)
+
+# Calculate confusion matrix
+cm = confusion_matrix(df['Sentiment_Class_Processed'], df['Sentiment_Class_Unprocessed'], labels=['positive', 'neutral', 'negative'])
+
+# Plot confusion matrix
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['positive', 'neutral', 'negative'])
+disp.plot()
+plt.title('Confusion Matrix for Sentiment Classes')
+plt.show()
+
+# Function to convert sentiment scores into classes
+def sentiment_to_class(sentiment_score):
+    if sentiment_score > 0.05:
+        return 'positive'
+    elif sentiment_score < -0.05:
+        return 'negative'
+    else:
+        return 'neutral'
+
+# Apply the function to convert sentiment scores into classes
+df['Blob_Class_Processed'] = df['Blob_Processed'].apply(sentiment_to_class)
+df['Blob_Class_Unprocessed'] = df['Blob_Unprocessed'].apply(sentiment_to_class)
+
+# Calculate confusion matrix
+cm = confusion_matrix(df['Blob_Class_Processed'], df['Blob_Class_Unprocessed'], labels=['positive', 'neutral', 'negative'])
+
+# Plot confusion matrix
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['positive', 'neutral', 'negative'])
+disp.plot()
+plt.title('Confusion Matrix for Blob Classes')
+plt.show()
+
+# Get the classification report for the Blob processed and unprocessed data
+Blob_report = classification_report(df['Blob_Class_Processed'], df['Blob_Class_Unprocessed'], target_names=['negative', 'neutral', 'positive'])
+
+print("Classification Report for Blob Processed vs Unprocessed:")
+print(Blob_report)
+
+# Get the classification report for the SIA processed and unprocessed data
+Sia_report = classification_report(df['Sentiment_Class_Processed'], df['Sentiment_Class_Unprocessed'], target_names=['negative', 'neutral', 'positive'])
+
+print("Classification Report for SIA Processed vs Unprocessed:")
+print(Sia_report)
+
+# Apply the function to convert sentiment scores into classes
+df['True_Class'] = df['Sentiment_Processed'].apply(sentiment_to_class)
+df['Predicted_Class'] = df['Blob_Processed'].apply(sentiment_to_class)
+
+# Compute the classification report
+comparison_report = classification_report(df['True_Class'], df['Predicted_Class'], target_names=['negative', 'neutral', 'positive'])
+
+print(comparison_report)
+
+second_row_comment = df['Facebook Comments'].iloc[3]
+print(second_row_comment)
+
+df
+
+#Now we will visualize the sentiment by state
+
+stop_words = set(stopwords.words('english'))
+
+# Define function for TextBlob sentiment analysis
+def get_textblob_sentiment(text):
+    # Compute sentiment score
+    testimonial = TextBlob(text)
+    return testimonial.sentiment.polarity
+
+# Define function for Sentiment Analyzer sentiment analysis
+def get_sentiment_analyzer_sentiment(text):
+    # Compute sentiment score
+    analyzer = SentimentIntensityAnalyzer()
+    sentiment_scores = analyzer.polarity_scores(text)
+    return sentiment_scores['compound']
+
+# Filter comments related to Coke and Pepsi
+df_coke = df[df['Facebook Comments'].str.contains('coke|coca-cola', case=False, na=False)]
+df_pepsi = df[df['Facebook Comments'].str.contains('pepsi', case=False, na=False)]
+
+# Compute sentiment scores using TextBlob
+df_coke['TextBlob_Sentiment'] = df_coke['Facebook Comments'].apply(get_textblob_sentiment)
+df_pepsi['TextBlob_Sentiment'] = df_pepsi['Facebook Comments'].apply(get_textblob_sentiment)
+
+# Compute sentiment scores using Sentiment Analyzer
+df_coke['SentimentAnalyzer_Sentiment'] = df_coke['Facebook Comments'].apply(get_sentiment_analyzer_sentiment)
+df_pepsi['SentimentAnalyzer_Sentiment'] = df_pepsi['Facebook Comments'].apply(get_sentiment_analyzer_sentiment)
+
+!pip install -q us
+import us
+import plotly.express as px
+
+df_coke['State'] = df_coke['State'].apply(lambda x: us.states.lookup(x).abbr)
+df_pepsi['State'] = df_pepsi['State'].apply(lambda x: us.states.lookup(x).abbr)
+
+# Compute average sentiment by state for TextBlob
+df_coke_state_textblob = df_coke.groupby('State')['TextBlob_Sentiment'].mean().reset_index()
+df_pepsi_state_textblob = df_pepsi.groupby('State')['TextBlob_Sentiment'].mean().reset_index()
+
+# Compute average sentiment by state for Sentiment Analyzer
+df_coke_state_sentimentanalyzer = df_coke.groupby('State')['SentimentAnalyzer_Sentiment'].mean().reset_index()
+df_pepsi_state_sentimentanalyzer = df_pepsi.groupby('State')['SentimentAnalyzer_Sentiment'].mean().reset_index()
+
+# Visualize TextBlob sentiment for Coke
+fig_coke_textblob = px.choropleth(df_coke_state_textblob, locations='State', color='TextBlob_Sentiment',
+                                  locationmode="USA-states", scope="usa",
+                                  title='TextBlob Sentiment towards Coke by State')
+fig_coke_textblob.show()
+
+# Visualize Sentiment Analyzer sentiment for Coke
+fig_coke_sentimentanalyzer = px.choropleth(df_coke_state_sentimentanalyzer, locations='State', color='SentimentAnalyzer_Sentiment',
+                                           locationmode="USA-states", scope="usa",
+                                           title='Sentiment Analyzer Sentiment towards Coke by State')
+fig_coke_sentimentanalyzer.show()
+
+# Visualize TextBlob sentiment for Pepsi
+fig_pepsi_textblob = px.choropleth(df_pepsi_state_textblob, locations='State', color='TextBlob_Sentiment',
+                                  locationmode="USA-states", scope="usa",
+                                  title='TextBlob Sentiment towards Pepsi by State')
+fig_pepsi_textblob.show()
+
+# Visualize Sentiment Analyzer sentiment for Pepsi
+fig_pepsi_sentimentanalyzer = px.choropleth(df_pepsi_state_sentimentanalyzer, locations='State', color='SentimentAnalyzer_Sentiment',
+                                           locationmode="USA-states", scope="usa",
+                                           title='Sentiment Analyzer Sentiment towards Pepsi by State')
+fig_pepsi_sentimentanalyzer.show()
+
+# Convert string labels to integers
+le = LabelEncoder()
+df['Sentiment_Class_Processed'] = le.fit_transform(df['Sentiment_Class_Processed'])
+
+#Generating Embeddings using tokenizer
+tokenizer = Tokenizer(num_words=500, split=' ')
+tokenizer.fit_on_texts(df['Preprocessed Comments'].values)
+X = tokenizer.texts_to_sequences(df['Preprocessed Comments'].values)
+X = pad_sequences(X)
+
+y = to_categorical(df['Sentiment_Class_Processed'].values)
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+def LSTM_Model(hp):
+    model = keras.models.Sequential()
+    model.add(Embedding(500, 120, input_length = X.shape[1]))
+    model.add(SpatialDropout1D(hp.Float('dropout_rate', min_value=0.0, max_value=0.5, step=0.1, default=0.0)))
+    model.add(LSTM(704, dropout=hp.Float('dropout_rate', min_value=0.0, max_value=0.5, step=0.1, default=0.0),
+                         recurrent_dropout=hp.Float('dropout_rate', min_value=0.0, max_value=0.5, step=0.1, default=0.0)))
+    model.add(Dense(352, activation='LeakyReLU'))
+    model.add(Dense(3, activation='softmax'))
+
+    hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
+    hp_optimizer = hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop'])
+
+    model.compile(optimizer=hp_optimizer,
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    return model
+
+tuner = kt.RandomSearch(
+    LSTM_Model,
+    objective='val_accuracy',
+    max_trials=5,
+    executions_per_trial=3,
+    directory='random_search',
+    project_name='sentiment_analysis')
+
+tuner.search_space_summary()
+
+tuner.search(X_train, y_train, epochs=5, validation_split=0.2)
+
+# Get the best hyperparameters
+best_hps=tuner.get_best_hyperparameters(num_trials=1)[0]
+
+print(f"""
+The hyperparameter search is complete. The optimal learning rate for the optimizer
+is {best_hps.get('learning_rate')}. The optimal optimizer is {best_hps.get('optimizer')}. The optimal dropout_rate is {best_hps.get('dropout_rate')}.
+""")
+
+# pull the best hyperparameters
+best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
+
+# Build the best model
+best_model = tuner.hypermodel.build(best_hps)
+
+# Train the best model on the full training data with the optimal hyperparameters
+best_model.fit(X_train, y_train, epochs=5, batch_size=32, validation_split=0.2)
+
+# Save the best model to a file
+best_model.save("best_model.h5")
+
+# Print the summary of the best model
+best_model.summary()
+
+# Evaluate the best model on the test data
+test_loss, test_accuracy = best_model.evaluate(X_test, y_test)
+print(f"Test Accuracy: {test_accuracy}")
+
+# from sklearn.model_selection import ParameterGrid
+# from transformers import BertForSequenceClassification, AdamW, get_linear_schedule_with_warmup
+
+# # Define a grid of hyperparameters
+# param_grid = {
+#     'learning_rate': [1e-5, 3e-5, 1e-4],
+#     'batch_size': [16, 32],
+#     'optimizer': ['Adam', 'AdamW'],
+#     'epochs': [2, 3, 4]
+# }
+
+# # Generate all combinations of hyperparameters
+# param_combinations = list(ParameterGrid(param_grid))
+
+# # Define the device
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# # Load dataset, prepare dataloader here
+# def assign_label(score):
+#     if score < -0.33:
+#         return "negative"
+#     elif score < 0.33:
+#         return "neutral"
+#     else:
+#         return "positive"
+
+# df['Sentiment_Label'] = df['Sentiment_Score'].apply(assign_label)
+
+# # Create a label (category) encoder object
+# le = preprocessing.LabelEncoder()
+
+# # Fit the encoder to the pandas column
+# le.fit(df['Sentiment_Label'])
+
+# # Apply the fitted encoder to the pandas column
+# df['Sentiment_Label'] = le.transform(df['Sentiment_Label'])
+
+# # Initialize the BERT tokenizer
+# tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+
+# # Tokenize the text
+# input_ids = []
+# attention_masks = []
+
+# for comment in df['Facebook Comments']:
+#     encoded_dict = tokenizer.encode_plus(
+#                         comment,
+#                         add_special_tokens = True,
+#                         max_length = 64,
+#                         pad_to_max_length = True,
+#                         return_attention_mask = True,
+#                         return_tensors = 'pt'
+#                    )
+
+#     input_ids.append(encoded_dict['input_ids'])
+#     attention_masks.append(encoded_dict['attention_mask'])
+
+# input_ids = torch.cat(input_ids, dim=0)
+# attention_masks = torch.cat(attention_masks, dim=0)
+
+# labels = df['Sentiment_Label'].values
+
+# # Convert labels to PyTorch tensors
+# labels = torch.tensor(labels)
+
+# # Split into training and holdout set
+# train_inputs, holdout_inputs, train_labels, holdout_labels, train_masks, holdout_masks = train_test_split(input_ids, labels, attention_masks,
+#                                                             random_state=777, test_size=0.2, shuffle = True)
+
+# # Split the holdout set into validation and test set
+# validation_inputs, test_inputs, validation_labels, test_labels, validation_masks, test_masks = train_test_split(holdout_inputs, holdout_labels, holdout_masks,
+#                                                             random_state=777, test_size=0.5, shuffle = True)
+
+# # Create data loaders
+# train_data = TensorDataset(train_inputs, train_masks, train_labels)
+# train_sampler = RandomSampler(train_data)
+# train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=batch_size)
+
+# validation_data = TensorDataset(validation_inputs, validation_masks, validation_labels)
+# validation_sampler = SequentialSampler(validation_data)
+# validation_dataloader = DataLoader(validation_data, sampler=validation_sampler, batch_size=batch_size)
+
+# test_data = TensorDataset(test_inputs, test_masks, test_labels)
+# test_sampler = SequentialSampler(test_data)
+# test_dataloader = DataLoader(test_data, sampler=test_sampler, batch_size=batch_size)
+
+# # Results dictionary
+# results = {}
+
+# # For each combination of hyperparameters...
+# for params in tqdm(param_combinations, desc="Hyperparameters", position=0, leave=True):
+
+#     # Unpack the hyperparameters
+#     learning_rate = params['learning_rate']
+#     batch_size = params['batch_size']
+#     optimizer_type = params['optimizer']
+#     num_epochs = params['epochs']
+
+#     # Print the hyperparameters
+#     print(f"Learning Rate: {learning_rate}, Batch Size: {batch_size}, Optimizer: {optimizer_type}, Epochs: {num_epochs}")
+
+#     # Load the model
+#     model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+#     model = model.to(device)
+
+#     # Define the optimizer
+#     if optimizer_type == 'Adam':
+#         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+#     else: # AdamW
+#         optimizer = AdamW(model.parameters(), lr=learning_rate)
+
+#     # Total steps and scheduler
+#     total_steps = len(train_dataloader) * num_epochs
+#     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+
+#     # Train the model
+#     for epoch in tqdm(range(num_epochs), desc="Epoch", position=0, leave=True):
+#         model.train()
+#         total_loss = 0
+#         for step, batch in tqdm(enumerate(train_dataloader), desc="Iteration", position=0, leave=True):
+#             # Unpack batch and load to device
+#             # ...
+#             b_input_ids, b_input_mask, b_labels = batch
+#             b_input_ids = b_input_ids.to(device)
+#             b_input_mask = b_input_mask.to(device)
+#             b_labels = b_labels.to(device)
+
+#             # Clear previously calculated gradients
+#             model.zero_grad()
+
+#             # Forward pass
+#             outputs = model(b_input_ids, token_type_ids=None, attention_mask=b_input_mask, labels=b_labels)
+#             loss = outputs.loss
+#             total_loss += loss.item()
+
+#             # Backward pass
+#             loss.backward()
+
+#             # Update weights
+#             optimizer.step()
+
+#             # Update learning rate schedule
+#             scheduler.step()
+
+#         avg_train_loss = total_loss / len(train_dataloader)
+#         print("Average training loss: {0:.2f}".format(avg_train_loss))
+
+#     # Evaluate the model
+#     model.eval()
+#     eval_loss, eval_accuracy = 0, 0
+#     nb_eval_steps, nb_eval_examples = 0, 0
+
+#     # Predict
+#     for batch in tqdm(validation_dataloader, desc="Validation", position=0, leave=True):
+#         batch = tuple(t.to(device) for t in batch)
+#         b_input_ids, b_input_mask, b_labels = batch
+
+#         with torch.no_grad():
+#             outputs = model(b_input_ids, token_type_ids=None, attention_mask=b_input_mask)
+
+#         logits = outputs.logits
+#         logits = logits.detach().cpu().numpy()
+#         label_ids = b_labels.to('cpu').numpy()
+
+#         tmp_eval_accuracy = accuracy_score(label_ids, np.argmax(logits, axis=1))
+#         eval_accuracy += tmp_eval_accuracy
+#         nb_eval_steps += 1
+
+#     print("Validation Accuracy: {0:.2f}".format(eval_accuracy/nb_eval_steps))
+
+#     # Record the performance for these hyperparameters
+#     results[f"LR: {learning_rate}, BS: {batch_size}, OP: {optimizer_type}, EP: {num_epochs}"] = {
+#         'Avg Train Loss': avg_train_loss,
+#         'Val Acc': eval_accuracy/nb_eval_steps
+#     }
+
+# # Print final results
+# for params, performance in results.items():
+#     print(f"{params} => Avg Train Loss: {performance['Avg Train Loss']:.2f}, Validation Accuracy: {performance['Val Acc']:.2f}")
+
+# # Define a df with the columns for the hyperparameters. We will save these for later
+# df = pd.DataFrame(columns=['LR', 'BS', 'OP', 'EP', 'Avg Train Loss', 'Validation Accuracy'])
+
+# # Loop through the results
+# for params, performance in results.items():
+#     # Extract the parameters from the string
+#     lr, bs, op, ep = params.split(", ")
+
+#     # Append a new row to the DataFrame
+#     df = df.append({
+#         'LR': lr,
+#         'BS': bs,
+#         'OP': op,
+#         'EP': ep,
+#         'Avg Train Loss': performance['Avg Train Loss'],
+#         'Validation Accuracy': performance['Val Acc']
+#     }, ignore_index=True)
+
+# # Save the DataFrame as a CSV file
+# df.to_csv('hyperparameters_and_results.csv', index=False)
+# df
+
+# Create a label (category) encoder object
+le = preprocessing.LabelEncoder()
+
+# Fit the encoder to the pandas column
+le.fit(df['Sentiment_Class_Processed'])
+
+# Apply the fitted encoder to the pandas column
+df['Sentiment__Class_Processed'] = le.transform(df['Sentiment_Class_Processed'])
+
+# Initialize the BERT tokenizer
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+
+# Tokenize the text
+input_ids = []
+attention_masks = []
+
+for comment in df['Preprocessed Comments']:
+    encoded_dict = tokenizer.encode_plus(
+                        comment,
+                        add_special_tokens = True,
+                        max_length = 64,
+                        pad_to_max_length = True,
+                        return_attention_mask = True,
+                        return_tensors = 'pt'
+                   )
+
+    input_ids.append(encoded_dict['input_ids'])
+    attention_masks.append(encoded_dict['attention_mask'])
+
+input_ids = torch.cat(input_ids, dim=0)
+attention_masks = torch.cat(attention_masks, dim=0)
+
+labels = df['Sentiment_Class_Processed'].values
+
+# Convert labels to PyTorch tensors
+labels = torch.tensor(labels)
+
+# Split into training and holdout set
+train_inputs, holdout_inputs, train_labels, holdout_labels, train_masks, holdout_masks = train_test_split(input_ids, labels, attention_masks,
+                                                            random_state=777, test_size=0.2, shuffle = True)
+
+# Split the holdout set into validation and test set
+validation_inputs, test_inputs, validation_labels, test_labels, validation_masks, test_masks = train_test_split(holdout_inputs, holdout_labels, holdout_masks,
+                                                            random_state=777, test_size=0.5, shuffle = True)
+
+batch_size = 32
+
+# Create data loaders
+train_data = TensorDataset(train_inputs, train_masks, train_labels)
+train_sampler = RandomSampler(train_data)
+train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=batch_size)
+
+validation_data = TensorDataset(validation_inputs, validation_masks, validation_labels)
+validation_sampler = SequentialSampler(validation_data)
+validation_dataloader = DataLoader(validation_data, sampler=validation_sampler, batch_size=batch_size)
+
+test_data = TensorDataset(test_inputs, test_masks, test_labels)
+test_sampler = SequentialSampler(test_data)
+test_dataloader = DataLoader(test_data, sampler=test_sampler, batch_size=batch_size)
+
+# Specify GPU as device
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+
+# Load BERTForSequenceClassification, the pretrained BERT model with a single linear classification layer on top.
+model = BertForSequenceClassification.from_pretrained(
+    "bert-base-uncased",
+    num_labels = 3, # The number of output labels--3 for classification ("negative", "neutral", "positive").
+    output_attentions = False, # Whether the model returns attentions weights.
+    output_hidden_states = False, # Whether the model returns all hidden-states.
+)
+
+# Tell pytorch to run this model on the GPU.
+model.to(device)
+
+# Set up the optimizer
+optimizer = AdamW(model.parameters(),
+                  lr = 0.0001,  # Best learning rate
+                  eps = 1e-8
+                )
+
+# Number of training epochs. The BERT authors recommend between 2 and 4.
+# Based on the best hyperparameters from your grid search
+epochs = 4
+
+# Total number of training steps is number of batches * number of epochs.
+total_steps = len(train_dataloader) * epochs
+
+# Create the learning rate scheduler.
+scheduler = get_linear_schedule_with_warmup(optimizer,
+                                            num_warmup_steps = 0,
+                                            num_training_steps = total_steps)
+
+# Define accuracy calculation function
+def flat_accuracy(preds, labels):
+    pred_flat = np.argmax(preds, axis=1).flatten()
+    labels_flat = labels.flatten()
+    return accuracy_score(labels_flat, pred_flat)
+
+# Training loop
+for epoch_i in range(0, epochs):
+    print('======== Epoch {:} / {:} ========'.format(epoch_i + 1, epochs))
+    total_train_loss = 0
+
+    # Put the model into training mode
+    model.train()
+
+    # Create a progress bar
+    progress_bar = tqdm(train_dataloader, desc="Iteration", disable=False)
+
+    for step, batch in enumerate(progress_bar):
+        # Unpack batch
+        b_input_ids = batch[0].to(device)
+        b_input_mask = batch[1].to(device)
+        b_labels = batch[2].to(device)
+
+        # Clear any previously calculated gradients
+        model.zero_grad()
+
+        # Forward pass
+        outputs = model(b_input_ids,
+                        token_type_ids=None,
+                        attention_mask=b_input_mask,
+                        labels=b_labels)
+
+        loss = outputs[0]
+        total_train_loss += loss.item()
+
+        # Backward pass
+        loss.backward()
+
+        # Clip the norm of the gradients to 1.0 to prevent "exploding gradients"
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+        # Update parameters and take a step using the computed gradient
+        optimizer.step()
+
+        # Update the learning rate.
+        scheduler.step()
+
+        # Update progress bar
+        progress_bar.set_postfix({'training_loss': '{:.3f}'.format(loss.item()/len(batch))})
+
+    # Calculate the average loss over all of the batches.
+    avg_train_loss = total_train_loss / len(train_dataloader)
+
+    print('Average training loss: {0:.2f}'.format(avg_train_loss))
+
+# Prediction on validation set
+print('Predicting labels for {:,} validation sentences...'.format(len(validation_inputs)))
+
+# Put model in evaluation mode
+model.eval()
+
+# Tracking variables
+predictions , true_labels = [], []
+
+for batch in validation_dataloader:
+    # Unpack batch
+    b_input_ids = batch[0].to(device)
+    b_input_mask = batch[1].to(device)
+    b_labels = batch[2].to(device)
+
+    # Telling the model not to compute or store gradients, saving memory and speeding up prediction
+    with torch.no_grad():
+      outputs = model(b_input_ids, token_type_ids=None, attention_mask=b_input_mask)
+
+    logits = outputs[0]
+
+    # Move logits and labels to CPU
+    logits = logits.detach().cpu().numpy()
+    label_ids = b_labels.to('cpu').numpy()
+
+    # Store predictions and true labels
+    predictions.append(logits)
+    true_labels.append(label_ids)
+
+print('DONE.')
+
+# Save the model to a file
+model.save_pretrained("model_directory")
+tokenizer.save_pretrained("model_directory")
+
+# After training the model
+model.eval()
+
+# Disable gradient updates
+with torch.no_grad():
+    # Forward pass, calculate logit predictions. Move validation_inputs to GPU.
+    outputs = model(validation_inputs.to(device))
+
+# Move logits and labels to CPU
+logits = outputs.logits.detach().cpu().numpy()
+label_ids = validation_labels.to('cpu').numpy()
+
+# Calculate the predictions using the maximum logit values
+predictions = np.argmax(logits, axis=1)
+
+# Print out the predicted and actual labels
+for prediction, label in zip(predictions, label_ids):
+    print(f'Predicted: {prediction}, Actual: {label}')
+
+import torch.nn.functional as F
+
+# Apply softmax to convert logits to probabilities
+probabilities = F.softmax(outputs.logits, dim=1)
+
+# Move probabilities to CPU and convert to numpy array
+probabilities = probabilities.detach().cpu().numpy()
+
+# Calculate the predictions using the maximum probability values
+predictions = np.argmax(probabilities, axis=1)
+
+from sklearn.metrics import classification_report
+
+# Convert logits to predictions
+predictions = np.argmax(probabilities, axis=1)
+class_names = ['negative', 'neutral', 'positive']
+
+print(classification_report(label_ids, predictions, target_names=class_names))
+
+df.to_csv('Final_df.csv', index=False)
+
+
+
+
+
+
+
+
+
